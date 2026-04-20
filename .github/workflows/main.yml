@@ -11,7 +11,7 @@ jobs:
         uses: actions/setup-python@v4
         with: {python-version: '3.10'}
       - name: Kutuphaneleri Yukle
-        run: pip install pyTelegramBotAPI yfinance pandas matplotlib feedparser textblob
+        run: pip install pyTelegramBotAPI yfinance pandas matplotlib feedparser textblob google-generativeai
       - name: Botu Baslat
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
