@@ -3,20 +3,15 @@ import yfinance as yf
 import os
 import datetime
 import feedparser
-import google.generativeai as genai
+from textblob import TextBlob
 
 # --- GÜVENLİ AYARLAR ---
 API_TOKEN = os.getenv("TELEGRAM_TOKEN")
 KULLANICI_ID = os.getenv("TELEGRAM_CHAT_ID")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-
-# API'yi yapılandırıyoruz
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
 
 bot = telebot.TeleBot(API_TOKEN)
 
-# 1. Analiz Edilecek 12 Ana Kanal
+# 1. Analiz Edilecek 11 Ana Kanal
 varliklar = {
     "1. ABD Borsası (S&P 500)": "^GSPC",
     "2. ABD 10Y Tahvil (Faiz)": "^TNX",
@@ -31,41 +26,31 @@ varliklar = {
     "11. Şirket Tahvilleri": "LQD"
 }
 
-def gelismis_yapay_zeka_analizi():
-    """Haberleri toplayıp Gemini API'ye derinlemesine analiz ettirir."""
-    if not GEMINI_API_KEY:
-        return "⚪ API Anahtarı eksik, LLM analizi atlandı."
-        
+def ucretsiz_yapay_zeka_analizi():
+    """Haberleri toplayıp TextBlob ile ücretsiz duygu analizi yapar."""
     try:
-        # 1. Ham Veriyi (Haberleri) Çek
         rss_url = "https://finance.yahoo.com/news/rssindex"
         feed = feedparser.parse(rss_url)
         
-        haberler_metni = ""
-        for i, entry in enumerate(feed.entries[:15]):
-            haberler_metni += f"{i+1}. {entry.title}\n"
+        toplam_duygu = 0
+        sayac = 0
+        
+        for entry in feed.entries[:15]:
+            analiz = TextBlob(entry.title)
+            toplam_duygu += analiz.sentiment.polarity
+            sayac += 1
             
-        # 2. Yapay Zekaya Yönlendirilecek Stratejik Komut (Prompt Engineering)
-        prompt = f"""
-        Aşağıda küresel finans piyasalarından alınan son 15 haber başlığı bulunmaktadır. 
-        Lütfen makroekonomik verileri okuyabilen üst düzey bir kantitatif fon yöneticisi gibi davran.
-        Sadece şu soruya odaklan: "Bu haberlere göre kurumsal fonlar (Smart Money) şu anda parayı hangi sektörlere (teknoloji, emtia, tahvil, güvenli liman vb.) sokuyor ve hangilerinden çıkarıyor?"
+        ortalama = toplam_duygu / sayac if sayac > 0 else 0
         
-        Cevabını 3 kısa madde halinde, net, kesin yargılarla ve finansal bir dille Türkçe olarak ver. 
-        Gereksiz nezaket veya giriş cümleleri kullanma, direkt analizi yaz.
-        
-        Gelen Haber Başlıkları:
-        {haberler_metni}
-        """
-        
-        # 3. Modeli Çağır ve Analizi Al
-model = genai.GenerativeModel('gemini-1.5-flash')
-response = model.generate_content(prompt)
-        
-        return response.text
-        
+        if ortalama > 0.05:
+            return "🟢 *POZİTİF* (Piyasalarda alım iştahı ve iyimserlik hakim)"
+        elif ortalama < -0.05:
+            return "🔴 *NEGATİF* (Haberlerde korku ve satış baskısı öne çıkıyor)"
+        else:
+            return "⚪ *NÖTR* (Haber akışı belirsiz veya dengeli)"
+            
     except Exception as e:
-        return f"⚪ LLM Analizi Başarısız Oldu: {str(e)}"
+        return f"⚪ AI Analizi Başarısız Oldu: {str(e)}"
 
 def piyasa_verilerini_cek_ve_analiz_et():
     rapor = f"🌍 *KÜRESEL MAKRO PİYASA RAPORU* ({datetime.datetime.now().strftime('%H:%M')})\n"
@@ -73,7 +58,6 @@ def piyasa_verilerini_cek_ve_analiz_et():
     
     veri_sozlugu = {}
 
-    # Verileri çek ve yüzdeleri hesapla
     for isim, sembol in varliklar.items():
         try:
             data = yf.download(sembol, period="5d", progress=False)['Close'].dropna()
@@ -93,12 +77,12 @@ def piyasa_verilerini_cek_ve_analiz_et():
             
     rapor += "--------------------------------------\n"
     
-    # --- YAPAY ZEKA HABER ANALİZİ ---
-    rapor += "🧠 *YAPAY ZEKA (LLM) KURUMSAL PARA AKIŞI ANALİZİ:*\n"
-    rapor += gelismis_yapay_zeka_analizi() + "\n\n"
+    # --- ÜCRETSİZ AI HABER ANALİZİ ---
+    rapor += "🧠 *YAPAY ZEKA HABER DUYARLILIĞI:*\n"
+    rapor += ucretsiz_yapay_zeka_analizi() + "\n\n"
     
     # --- DİNAMİK ÇAPRAZ RASYO YORUMLARI ---
-    rapor += "🤖 *ALGORİTMA PİYASA YORUMU (RASYOLAR):*\n"
+    rapor += "🤖 *ALGORİTMA PİYASA YORUMU:*\n"
     
     dxy_yon = veri_sozlugu.get("7. Dolar Endeksi (DXY)", 0)
     altin_yon = veri_sozlugu.get("3. Güvenli Liman (Altın)", 0)
@@ -106,30 +90,27 @@ def piyasa_verilerini_cek_ve_analiz_et():
     borsa_yon = veri_sozlugu.get("1. ABD Borsası (S&P 500)", 0)
     faiz_yon = veri_sozlugu.get("2. ABD 10Y Tahvil (Faiz)", 0)
 
-    # Dolar Analizi
     if dxy_yon > 0:
         rapor += "⚠️ *Dolar Güçleniyor:* Küresel likidite dolara çekiliyor, bu durum emtia ve borsalarda baskı yaratır.\n"
     else:
         rapor += "💵 *Dolar Zayıflıyor:* Doların geri çekilmesi, riskli varlıklara ve değerli metallere nefes aldırıyor.\n"
 
-    # Altın / Bakır Analizi
     if bakir_yon > 0 and altin_yon <= 0:
         rapor += "🏭 *Sanayi Çarkları Dönüyor:* Bakırın altına karşı güçlenmesi, piyasaların resesyon (kriz) beklemediğini gösterir.\n"
     elif altin_yon > 0 and bakir_yon <= 0:
-        rapor += "🛡️ *Güvenli Liman Talebi:* Bakır düşerken Altının yükselmesi, yatırımcıların bir riskten kaçarak nakit korumaya geçtiğinin net sinyalidir.\n"
+        rapor += "🛡️ *Güvenli Liman Talebi:* Bakır düşerken Altının yükselmesi, yatırımcıların riskten kaçarak nakit korumaya geçtiğinin sinyalidir.\n"
 
-    # Tahvil vs Borsa Analizi
     if faiz_yon > 0 and borsa_yon < 0:
         rapor += "📉 *Sermaye Göçü:* Tahvil faizlerindeki artış, parayı borsadan risksiz getiriye doğru çekiyor.\n"
     elif borsa_yon > 0:
-        rapor += "📈 *Risk İştahı Açık:* Borsalara para girişi devam ediyor, faiz baskısı şu an için fiyatlanmıyor.\n"
+        rapor += "📈 *Risk İştahı Açık:* Borsalara para girişi devam ediyor, faiz baskısı şu an fiyatlanmıyor.\n"
 
     return rapor
 
 @bot.message_handler(commands=['start', 'rapor'])
 def handle_commands(message):
     if str(message.from_user.id) == str(KULLANICI_ID):
-        bot.send_message(message.chat.id, "🤖 Makro analiz, rasyolar ve Gemini Yapay Zeka fon akışı analizi yapılıyor. Lütfen bekleyin...")
+        bot.send_message(message.chat.id, "🤖 Makro analiz, rasyolar ve AI haber okuması yapılıyor. Lütfen bekleyin...")
         metin = piyasa_verilerini_cek_ve_analiz_et()
         bot.send_message(message.chat.id, metin, parse_mode="Markdown")
     else:
