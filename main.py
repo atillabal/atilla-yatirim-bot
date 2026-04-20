@@ -1,90 +1,84 @@
+import telebot
 import yfinance as yf
-import pandas as pd
-import matplotlib.pyplot as plt
-import requests
-import datetime
 import os
+import datetime
 
-# --- GÜVENLİK AYARI (GITHUB SECRETS) ---
-# Kod artık tokenları açıkça yazmanızı istemez, sistemden çeker.
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+# --- GÜVENLİ AYARLAR ---
+API_TOKEN = os.getenv("TELEGRAM_TOKEN")
+KULLANICI_ID = os.getenv("TELEGRAM_CHAT_ID")
 
+bot = telebot.TeleBot(API_TOKEN)
+
+# 1. Analiz Edilecek 10 Ana Kanal ve Yahoo Finance Sembolleri
 varliklar = {
     "1. ABD Borsası (S&P 500)": "^GSPC",
-    "2. ABD 10Y Tahvil": "^TNX",
+    "2. ABD 10Y Tahvil (Faiz)": "^TNX",
     "3. Güvenli Liman (Altın)": "GC=F",
     "4. Endüstriyel (Bakır)": "HG=F",
     "5. Enerji (Petrol)": "CL=F",
-    "6. Dolar Endeksi (DXY)": "DX-Y.NYB"
+    "6. Dolar Endeksi (DXY)": "DX-Y.NYB",
+    "7. Kripto (Bitcoin)": "BTC-USD",
+    "8. Tarım (Buğday)": "ZW=F",
+    "9. Gelişen Piyasalar (EEM)": "EEM",
+    "10. Şirket Tahvilleri (LQD)": "LQD"
 }
 
-def analiz_motoru():
-    rapor = f"🛡️ *STRATEJİK PİYASA RAPORU* ({datetime.date.today()})\n"
+def piyasa_verilerini_cek_ve_analiz_et():
+    rapor = f"🌍 *KÜRESEL MAKRO PİYASA RAPORU* ({datetime.datetime.now().strftime('%H:%M')})\n"
     rapor += "--------------------------------------\n"
     
+    veri_sozlugu = {}
+
+    # Verileri çekme ve hesaplama döngüsü
     for isim, sembol in varliklar.items():
         try:
-            # 200 günlük SMA için en az 260 günlük veri çekiyoruz
-            data = yf.download(sembol, period="260d", progress=False)
-            if len(data) >= 200:
-                # Ortalamaları Hesapla
-                data['SMA_50'] = data['Close'].rolling(window=50).mean()
-                data['SMA_200'] = data['Close'].rolling(window=200).mean()
+            # Doğru Uygulama: Hafta sonu NaN hatası almamak için 5 günlük veri çekip boşlukları siliyoruz
+            data = yf.download(sembol, period="5d", progress=False)['Close'].dropna()
+            
+            if len(data) >= 2:
+                dunku_kapanis = data.iloc[-2].item()
+                bugunku_kapanis = data.iloc[-1].item()
                 
-                bugun = data.iloc[-1]
-                dun = data.iloc[-2]
+                # Yüzdelik hesaplama
+                degisim_yuzdesi = ((bugunku_kapanis - dunku_kapanis) / dunku_kapanis) * 100
+                veri_sozlugu[isim] = degisim_yuzdesi
                 
-                # Günlük Değişim
-                degisim = ((bugun['Close'] - dun['Close']) / dun['Close']) * 100
-                ikon = "🟢" if degisim > 0 else "🔴"
-                rapor += f"{ikon} {isim}: %{degisim:.2f}\n"
-                
-                # --- ALTIN VURUŞ (GOLDEN CROSS) ANALİZİ ---
-                # 50, 200'ü yukarı keserse = Boğa (Yükseliş) Sezonu
-                if bugun['SMA_50'] > bugun['SMA_200'] and dun['SMA_50'] <= dun['SMA_200']:
-                    rapor += f"   🌟 *GOLDEN CROSS:* {isim.split()[1]} uzun vadeli yükseliş trendine girdi!\n"
-                
-                # 50, 200'ü aşağı keserse = Ölüm Kavşağı (Death Cross)
-                elif bugun['SMA_50'] < bugun['SMA_200'] and dun['SMA_50'] >= dun['SMA_200']:
-                    rapor += f"   💀 *DEATH CROSS:* {isim.split()[1]} için tehlike çanları çalıyor, düşüş derinleşebilir.\n"
-                    
-                # Mevcut trend durumu
-                elif bugun['SMA_50'] > bugun['SMA_200']:
-                    rapor += "   📈 *Trend:* Pozitif (Boğa)\n"
-                else:
-                    rapor += "   📉 *Trend:* Negatif (Ayı)\n"
-                    
+                # Görsel formatlama (Yeşil/Kırmızı İkonlar)
+                ikon = "🟢" if degisim_yuzdesi > 0 else "🔴"
+                rapor += f"{ikon} {isim}: %{degisim_yuzdesi:.2f}\n"
+            else:
+                rapor += f"⚪ {isim}: Veri okunamadı.\n"
         except Exception as e:
-            rapor += f"⚪ {isim}: Hata oluştu.\n"
-
+            rapor += f"⚪ {isim}: Hata\n"
+            
     rapor += "--------------------------------------\n"
+    rapor += "*GÜNLÜK PİYASA YORUMU (ALGORİTMA):*\n"
+    
+    # İleri Düzey Çapraz Rasyo Analizi
+    if veri_sozlugu.get("6. Dolar Endeksi (DXY)", 0) > 0.5:
+        rapor += "⚠️ *Dolar Endeksi (DXY) güçleniyor.* Bu durum diğer tüm emtia ve hisse senetleri üzerinde satış baskısı yaratabilir.\n\n"
+        
+    if veri_sozlugu.get("4. Endüstriyel (Bakır)", 0) > 1.0 and veri_sozlugu.get("3. Güvenli Liman (Altın)", 0) < 0:
+        rapor += "🚀 *Bakır yükseliyor, Altın düşüyor.* Sermaye 'korku' psikolojisinden çıkıp 'ekonomik büyüme ve risk' kanallarına akıyor.\n\n"
+        
+    if veri_sozlugu.get("2. ABD 10Y Tahvil (Faiz)", 0) > 2.0 and veri_sozlugu.get("1. ABD Borsası (S&P 500)", 0) < 0:
+        rapor += "📉 *Tahvil faizlerinde sert yükseliş var.* Kurumsal para borsadan çıkıp garantili getiri sunan tahvillere kaçıyor.\n\n"
+        
+    if not any(v > 0.5 for v in veri_sozlugu.values()) and not any(v < -0.5 for v in veri_sozlugu.values()):
+        rapor += "⚖️ Piyasada bugün yatay ve sakin bir seyir hakim. Önemli bir sermaye rotasyonu gözlemlenmedi.\n"
+
     return rapor
 
-# Grafik ve Gönderim fonksiyonları önceki kod ile aynı kalacaktır...
-def kiyaslama_grafigi_ciz():
-    sp500 = yf.download("^GSPC", period="1mo", progress=False)['Close']
-    dxy = yf.download("DX-Y.NYB", period="1mo", progress=False)['Close']
-    sp500_norm = (sp500 / sp500.iloc[0]) * 100
-    dxy_norm = (dxy / dxy.iloc[0]) * 100
-    plt.figure(figsize=(10, 5))
-    plt.plot(sp500_norm.index, sp500_norm, label="Borsa", color='blue')
-    plt.plot(dxy_norm.index, dxy_norm, label="Dolar", color='green')
-    plt.title("Borsa vs Dolar (1 Aylık Kıyas)")
-    plt.savefig("kiyaslama.png")
-    plt.close()
-    return "kiyaslama.png"
-
-def telegram_gonder(mesaj, foto):
-    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
-        print("Hata: API Anahtarları bulunamadı!")
-        return
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
-    with open(foto, 'rb') as f:
-        requests.post(url, data={"chat_id": TELEGRAM_CHAT_ID, "caption": mesaj, "parse_mode": "Markdown"}, files={"photo": f})
-    os.remove(foto)
+@bot.message_handler(commands=['start', 'rapor'])
+def handle_commands(message):
+    # Güvenlik kontrolü
+    if str(message.from_user.id) == str(KULLANICI_ID):
+        bot.send_message(message.chat.id, "Makro analiz ve çapraz rasyolar hesaplanıyor...")
+        metin = piyasa_verilerini_cek_ve_analiz_et()
+        bot.send_message(message.chat.id, metin, parse_mode="Markdown")
+    else:
+        bot.reply_to(message, "Bu bot kişiye özeldir. Erişim reddedildi.")
 
 if __name__ == "__main__":
-    rapor = analiz_motoru()
-    grafik = kiyaslama_grafigi_ciz()
-    telegram_gonder(rapor, grafik)
+    print("Bot yayına başladı...")
+    bot.infinity_polling()
